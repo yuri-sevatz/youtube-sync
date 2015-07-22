@@ -54,7 +54,7 @@ parser.add_argument(
     'action',
     action='store',
     help='Action',
-    choices=['create', 'insert', 'update', 'delete', 'sources', 'query', 'sync', 'input', 'output'],
+    choices=['create', 'insert', 'update', 'delete', 'sources', 'videos', 'sync', 'query', 'input', 'output'],
 )
 parser.add_argument(
     'url',
@@ -101,6 +101,10 @@ elif args.action == 'sources':
     for source in db.sources():
         debug(source)
     exit(0)
+elif args.action == 'videos':
+    for video in db.videos():
+        debug(video)
+    exit(0)
 elif args.action == 'input':
     debug(db.input(args.url))
     exit(0)
@@ -119,6 +123,6 @@ try:
     db.session.commit()
     debug('Command Successful')
 except IntegrityError:
-    error('Error: IntegrityError... duplicate source/video or null value?')
+    error('Error: IntegrityError... duplicate entity?')
     db.session.rollback()
     exit(1)

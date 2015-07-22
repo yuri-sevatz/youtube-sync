@@ -1,46 +1,81 @@
 import re
-import youtube_dl
 
-from sqlalchemy import Column
-from sqlalchemy import ForeignKey, UniqueConstraint
-from sqlalchemy import Boolean, String, Integer, DateTime, Interval
-from sqlalchemy import Table
-from sqlalchemy import create_engine
+from datetime import (
+    datetime,
+    timedelta,
+)
 
-from sqlalchemy.orm import relationship, sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Integer,
+    Interval,
+    ForeignKey,
+    String,
+    Table,
+    UniqueConstraint,
+    create_engine,
+)
 
-from datetime import datetime, timedelta
+from sqlalchemy.orm import (
+    relationship,
+    sessionmaker,
+)
+from sqlalchemy.ext.declarative import (
+    declarative_base,
+)
+
+from youtube_dl import (
+    YoutubeDL,
+    gen_extractors,
+)
+
+from youtube_dl.extractor.youtube import (
+    YoutubeIE,
+    YoutubeChannelIE,
+    YoutubeFavouritesIE,
+    YoutubeHistoryIE,
+    YoutubePlaylistIE,
+    YoutubeRecommendedIE,
+    YoutubeSearchDateIE,
+    YoutubeSearchIE,
+    YoutubeSearchURLIE,
+    YoutubeShowIE,
+    YoutubeSubscriptionsIE,
+    YoutubeTruncatedIDIE,
+    YoutubeTruncatedURLIE,
+    YoutubeUserIE,
+    YoutubeWatchLaterIE,
+)
+
+from youtube_dl.utils import (
+    ExtractorError,
+)
 
 Base = declarative_base()
 
-class Filter:
-    def __init__(self, pattern, replace):
-        self.pattern = pattern
-        self.replace = replace
 
-    def convert(self, value):
-        if re.search(self.pattern, value):
-            if self.replace:
-                return re.sub(self.pattern, self.replace, value)
-            else:
-                return value
-        return None
-
+class ConverterError(ExtractorError):
+    def __init__(self, msg):
+        super(ConverterError, self).__init__(msg)
 
 class Converter:
-    def __init__(self, input_filter, output_filter):
-        self.input_filter = input_filter
-        self.output_filter = output_filter
+    def __init__(self, regex, parse, template):
+        self.regex = regex
+        self.parse = parse
+        self.template = template
 
-    def input(self, value):
-        return self.input_filter.convert(value)
+    def input(self, url):
+        mobj = re.match(self.regex, url)
+        if mobj is None:
+            raise ConverterError('Invalid URL: %s' % url)
+        value = self.parse(mobj)
+        if value is None:
+            raise ConverterError('Invalid Id: %s' % url)
+        return value
 
     def output(self, value):
-        return self.output_filter.convert(value)
-
-    def migrate(self, value):
-        return self.input(self.output(value))
+        return self.template(value)
 
 
 class Entity(Base):
@@ -58,10 +93,6 @@ class Entity(Base):
     __table_args__ = (
         UniqueConstraint('extractor_id', 'extractor_data', 'type', name='_entity_extractor_type'),
     )
-
-    def upgrade(self, converter):
-        self.extractor_id = converter.id
-        self.extractor_data = converter.migrate(self.extractor_data)
 
 class Video(Entity):
     __tablename__ = 'video'
@@ -97,8 +128,8 @@ class Database:
         session = sessionmaker()
         session.configure(bind=engine)
         self.session = session()
-        self.extractors = youtube_dl.gen_extractors()
-        self.converters = converters()
+        self.extractors = gen_extractors()
+        self.converters = gen_converters()
         self.log = log
 
         version = self.__select_config('version').first()
@@ -108,66 +139,59 @@ class Database:
                 value=Database.__version__
             ))
 
-    def upgrade(self):
-        """ Upgrade Entities using new Extractors """
-        for entity in self.session.query(Entity).all():
-            converter = self.converters.get(entity.extractor_id)
-            if converter is not None:
-                entity.upgrade(converter)
-                self.session.merge(entity)
-
     def query(self, url, ydl_opts):
         """ Perform an online query without affecting persistence """
-        ydl = youtube_dl.YoutubeDL(ydl_opts)
+        ydl = YoutubeDL(ydl_opts)
         info = self.__extract_info(ydl, url)
         return info['entries'] if 'entries' in info else [info]
 
     def insert(self, url, delta):
-        source = self.__create_source(url, delta)
-        if source:
-            self.session.add(source)
-            return True
-        else:
-            return False
+        self.session.add(self.__create_source(url, delta))
+        return True
 
     def update(self, url, ydl_opts):
         """ Perform an online query that affects persistence """
         source = self.__select_source(url).first()
-        return source and self.__update_source(youtube_dl.YoutubeDL(ydl_opts), source, url)
+        return source and self.__update_source(YoutubeDL(ydl_opts), source, url)
 
     def delete(self, url):
         source = self.__select_source(url).first()
         if not source:
             return False
-        return self.session.delete(source)
+        self.session.delete(source)
+        return True
 
     def input(self, url):
-        extractor = self.__create_extractor(url)
-        return self.__convert_input(url, extractor) if extractor else None
+        return self.__create_converter(self.__create_extractor(url)).input(url)
 
     def output(self, url):
-        extractor = self.__create_extractor(url)
-        return self.__convert_output(url, extractor) if extractor else None
+        converter = self.__create_converter(self.__create_extractor(url))
+        return converter.output(converter.input(url))
 
     def sources(self):
         items = []
         for source in self.__select_sources().all():
-            converter = self.converters.get(source.extractor_id)
-            items.append(source.extractor_data if converter is None else converter.output(source.extractor_data))
+            items.append(self.converters.get(source.extractor_id).output(source.extractor_data))
+        return items
+
+    def videos(self):
+        items = []
+        for video in self.__select_videos().all():
+            items.append(self.converters.get(video.extractor_id).output(video.extractor_data))
         return items
 
     def sync(self, ydl_opts):
-        ydl = youtube_dl.YoutubeDL(ydl_opts)
+        ydl = YoutubeDL(ydl_opts)
         for source in self.__select_sources().filter(Source.next <= datetime.now()).all():
             converter = self.converters.get(source.extractor_id)
-            url = source.extractor_data if converter is None else converter.output(source.extractor_data)
+            url = converter.output(source.extractor_data)
             self.__update_source(ydl, source, url)
 
     def __create_source(self, url, delta):
         extractor = self.__create_extractor(url)
-        return None if not extractor else Source(
+        return Source(
             extractor_id=extractor.IE_NAME,
-            extractor_data=self.__convert_input(url, extractor),
+            extractor_data=self.__create_converter(extractor).input(url),
             delta=delta,
         )
 
@@ -177,13 +201,11 @@ class Database:
                 return extractor
         return None
 
-    def __convert_output(self, url, extractor):
-        parser = self.converters.get(extractor.IE_NAME)
-        return parser.output(url) if parser else url
-
-    def __convert_input(self, url, extractor):
-        parser = self.converters.get(extractor.IE_NAME)
-        return parser.input(url) if parser else url
+    def __create_converter(self, extractor):
+        converter = self.converters.get(extractor.IE_NAME, None)
+        if converter is None:
+            raise ConverterError('Invalid IE: %s' % extractor.IE_NAME)
+        return converter
 
     def __select_config(self, key):
         return self.session.query(Config).filter(Config.id == key)
@@ -191,13 +213,14 @@ class Database:
     def __select_sources(self):
         return self.session.query(Source)
 
+    def __select_videos(self):
+        return self.session.query(Video)
+
     def __select_source(self, url):
         extractor = self.__create_extractor(url)
-        if not extractor:
-            return None
         return self.session.query(Source).\
             filter(Entity.extractor_id == extractor.IE_NAME).\
-            filter(Entity.extractor_data == self.__convert_input(url, extractor))
+            filter(Entity.extractor_data == self.__create_converter(extractor).input(url))
 
     def __select_video(self, extractor_id, extractor_data):
         return self.session.query(Video).\
@@ -241,7 +264,7 @@ class Database:
         ie_key = item.get('ie_key', None)
         if ie_key:
             ''' Unextracted content seems to return an internal ie key '''
-            return ydl.get_info_extractor(ie_key)
+            return ydl.get_info_extractor(ie_key).IE_NAME
         else:
             ''' Extracted content seems to use the public ie name '''
             return item.get('extractor', None)
@@ -251,53 +274,34 @@ class Database:
         return ydl.extract_info(url, download=False, process=True)
 
 
-def converters():
-    '''
-    We define a set of default extractors that roughly follow the unique portions of the extractors in youtube_dl.
-    (These would be GREAT to merge upstream, because they let us extract a unique identity offline, using any url!)
+def gen_converters():
+    """
+    We define a set of converters that roughly follow the unique portions of the extractors in youtube_dl.
 
-    Extractors that can't be matched with one of these don't maintain uniqueness, but the output filter code is
-    strong enough to support re-parsing uris at a later time.
-    '''
+    A lot of this is shamelessly coupled with the current definitions of some of these info extractors,
+    so it might be better to either merge or start copying some of these regexes to avoid runtime breakage.
+
+    This type of offline analysis is quite a powerful feature and would be trivial to merge upstream
+    """
     return {
         'youtube': Converter(
-            input_filter=Filter(
-                pattern='^(?:https?://)?(?:(?:www|m)\.)?youtube\.[a-z]{2,3}/watch\?v=([^&#]+).*$',
-                replace='\\1'
-            ),
-            output_filter=Filter(
-                pattern='^(?:(?:https?://)?(?:(?:www|m)\.)?youtube\.[a-z]{2,3}/watch\?v=)?([^&#]+)',
-                replace='www.youtube.com/watch?v=\\1'
-            )
+            regex=YoutubeIE._VALID_URL,
+            parse=lambda mobj: mobj.group(2),
+            template=lambda video_id: 'https://www.youtube.com/watch?v=%s' % video_id,
         ),
         'youtube:playlist': Converter(
-            input_filter=Filter(
-                pattern='^(?:https?://)?(?:(?:www|m)\.)?youtube\.[a-z]{2,3}/playlist\?list=([^&#]+).*$',
-                replace='\\1'
-            ),
-            output_filter=Filter(
-                pattern='^(?:(?:https?://)?(?:(?:www|m)\.)?youtube\.[a-z]{2,3}/playlist\?list=)?([^&#]+)',
-                replace='www.youtube.com/playlist?list=\\1'
-            )
+            regex=YoutubePlaylistIE._VALID_URL,
+            parse=lambda mobj: mobj.group(1) if mobj.group(1) else mobj.group(2),
+            template=lambda playlist_id: YoutubePlaylistIE._TEMPLATE_URL % playlist_id,
         ),
         'youtube:channel': Converter(
-            input_filter=Filter(
-                pattern='^(?:https?://)?(?:(?:www|m)\.)?youtube\.[a-z]{2,3}/channel/([^/\?&]+).*$',
-                replace='\\1'
-            ),
-            output_filter=Filter(
-                pattern='^(?:(?:https?://)?(?:(?:www|m)\.)?youtube\.[a-z]{2,3}/channel/)?([^/\?&]+)',
-                replace='www.youtube.com/channel/\\1'
-            )
+            regex=YoutubeChannelIE._VALID_URL,
+            parse=lambda mobj: mobj.group(1),
+            template=lambda channel_id: YoutubeChannelIE._TEMPLATE_URL % channel_id,
         ),
         'youtube:user': Converter(
-            input_filter=Filter(
-                pattern='^(?:https?://)?(?:(?:www|m)\.)?youtube\.[a-z]{2,3}/user/([^/\?&]+).*$',
-                replace='\\1'
-            ),
-            output_filter=Filter(
-                pattern='^(?:(?:https?://)?(?:(?:www|m)\.)?youtube\.[a-z]{2,3}/user/)?([^/\?&]+)',
-                replace='www.youtube.com/user/\\1'
-            )
+            regex=YoutubeUserIE._VALID_URL,
+            parse=lambda mobj: mobj.group(1),
+            template=lambda user_id: YoutubeUserIE._TEMPLATE_URL % user_id,
         ),
     }
