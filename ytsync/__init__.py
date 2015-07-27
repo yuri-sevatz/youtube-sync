@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 
 from sqlalchemy.orm import (
+    lazyload,
     relationship,
     sessionmaker,
 )
@@ -52,9 +53,6 @@ from youtube_dl.utils import (
     ExtractorError,
 )
 
-Base = declarative_base()
-
-
 class ConverterError(ExtractorError):
     def __init__(self, msg):
         super(ConverterError, self).__init__(msg)
@@ -77,13 +75,15 @@ class Converter:
     def output(self, value):
         return self.template(value)
 
+Base = declarative_base()
+
 
 class Entity(Base):
     __tablename__ = 'entity'
     id = Column(Integer, primary_key=True, nullable=False)
     type = Column(String, nullable=False)
     prev = Column(DateTime, nullable=True)
-    extractor_id = Column(String, nullable=False)
+    extractor_key = Column(String, nullable=False)
     extractor_data = Column(String, nullable=False)
     __mapper_args__ = {
         'polymorphic_on': type,
@@ -91,8 +91,9 @@ class Entity(Base):
         'with_polymorphic': '*'
     }
     __table_args__ = (
-        UniqueConstraint('extractor_id', 'extractor_data', 'type', name='_entity_extractor_type'),
+        UniqueConstraint('extractor_key', 'extractor_data', 'type', name='_entity_extractor_type'),
     )
+
 
 class Video(Entity):
     __tablename__ = 'video'
@@ -139,20 +140,21 @@ class Database:
                 value=Database.__version__
             ))
 
-    def query(self, url, ydl_opts):
+    @staticmethod
+    def query(url, ydl_opts):
         """ Perform an online query without affecting persistence """
-        ydl = YoutubeDL(ydl_opts)
-        info = self.__extract_info(ydl, url)
-        return info['entries'] if 'entries' in info else [info]
+        return Database.__extract_info(Database.__create_ydl(ydl_opts), url)
+
+    def input(self, url):
+        converter = self.__create_converter(self.__create_extractor(url))
+        return converter.input(url)
+
+    def output(self, url):
+        converter = self.__create_converter(self.__create_extractor(url))
+        return converter.output(converter.input(url))
 
     def insert(self, url, delta):
         self.session.add(self.__create_source(url, delta))
-        return True
-
-    def update(self, url, ydl_opts):
-        """ Perform an online query that affects persistence """
-        source = self.__select_source(url).first()
-        return source and self.__update_source(YoutubeDL(ydl_opts), source, url)
 
     def delete(self, url):
         source = self.__select_source(url).first()
@@ -161,36 +163,52 @@ class Database:
         self.session.delete(source)
         return True
 
-    def input(self, url):
-        return self.__create_converter(self.__create_extractor(url)).input(url)
-
-    def output(self, url):
-        converter = self.__create_converter(self.__create_extractor(url))
-        return converter.output(converter.input(url))
-
     def sources(self):
         items = []
         for source in self.__select_sources().all():
-            items.append(self.converters.get(source.extractor_id).output(source.extractor_data))
+            items.append(self.converters.get(source.extractor_key).output(source.extractor_data))
         return items
 
     def videos(self):
         items = []
         for video in self.__select_videos().all():
-            items.append(self.converters.get(video.extractor_id).output(video.extractor_data))
+            items.append(self.converters.get(video.extractor_key).output(video.extractor_data))
         return items
 
-    def sync(self, ydl_opts):
-        ydl = YoutubeDL(ydl_opts)
-        for source in self.__select_sources().filter(Source.next <= datetime.now()).all():
-            converter = self.converters.get(source.extractor_id)
-            url = converter.output(source.extractor_data)
-            self.__update_source(ydl, source, url)
+    def sync(self, ydl_opts, url=None, fetch=True, download=True):
+        if url is None:
+            query = self.__select_sources()
+        else:
+            query = self.__select_source(url)
+        sources = query.all()
+
+        if url and not len(sources):
+            return False
+
+        ydl = Database.__create_ydl(ydl_opts)
+        for source in sources:
+            if fetch and source.next <= datetime.today():
+                converter = self.converters.get(source.extractor_key)
+                self.__refresh_source(ydl, source, converter.output(source.extractor_data))
+            if download:
+                self.__download_source(ydl, source)
+        return True
+
+    def get(self, ydl_opts, url):
+        source = self.__create_source(url, timedelta(days=1))
+        ydl = Database.__create_ydl(ydl_opts)
+        converter = self.converters.get(source.extractor_key)
+        self.__refresh_source(ydl, source, converter.output(source.extractor_data))
+        self.__download_source(ydl, source)
+
+    @staticmethod
+    def __create_ydl(ydl_opts):
+        return YoutubeDL(ydl_opts)
 
     def __create_source(self, url, delta):
         extractor = self.__create_extractor(url)
         return Source(
-            extractor_id=extractor.IE_NAME,
+            extractor_key=extractor.IE_NAME,
             extractor_data=self.__create_converter(extractor).input(url),
             delta=delta,
         )
@@ -207,11 +225,14 @@ class Database:
             raise ConverterError('Invalid IE: %s' % extractor.IE_NAME)
         return converter
 
+    def __convert_url(self, extractor_key, extractor_data):
+        return self.converters.get(extractor_key).output(extractor_data)
+
     def __select_config(self, key):
         return self.session.query(Config).filter(Config.id == key)
 
     def __select_sources(self):
-        return self.session.query(Source)
+        return self.session.query(Source).options(lazyload('videos'))
 
     def __select_videos(self):
         return self.session.query(Video)
@@ -219,45 +240,45 @@ class Database:
     def __select_source(self, url):
         extractor = self.__create_extractor(url)
         return self.session.query(Source).\
-            filter(Entity.extractor_id == extractor.IE_NAME).\
+            filter(Entity.extractor_key == extractor.IE_NAME).\
             filter(Entity.extractor_data == self.__create_converter(extractor).input(url))
 
-    def __select_video(self, extractor_id, extractor_data):
-        return self.session.query(Video).\
-            filter(Entity.type == Video.__tablename__).\
-            filter(Entity.extractor_id == extractor_id).\
+    def __select_video(self, extractor_key, extractor_data):
+        return self.__select_videos().\
+            filter(Entity.extractor_key == extractor_key).\
             filter(Entity.extractor_data == extractor_data)
 
-    def __update_source(self, ydl, source, url):
-        info = self.__extract_info(ydl, url)
-        if not info:
-            return False
-        if 'entries' in info:
-            for item in info['entries']:
-                if not self.__update_video(ydl, source, item):
-                    self.log('Warning: Parsing error - ' + url)
-        else:
-            self.__update_video(ydl, source, info)
+    def __refresh_source(self, ydl, source, url):
+        for item in self.__extract_info(ydl, url, download=False):
+            video = self.__create_video(ydl, item)
+            if video:
+                source.videos.append(video)
+            else:
+                self.log('Warning: Parsing error - ' + url)
         source.prev = datetime.now()
         source.next = source.prev + source.delta
-        return True
 
-    def __update_video(self, ydl, source, item):
+    def __download_source(self, ydl, source):
+        for video in source.videos:
+            url = self.__convert_url(video.extractor_key, video.extractor_data)
+            self.__extract_info(ydl, url, download=True)
+            video.prev = datetime.now()
+
+    def __create_video(self, ydl, item):
         ''' YoutubeDL basically returns a pile of context-sensitive garbage identifying things that it *might* be '''
         ''' (...because using variant-type key-value APIs didn't destroy enough life on earth during the 80's!) '''
         extractor_key = self.__extract_key(ydl, item)
         if extractor_key is None:
-            return False
-        extractor_id = extractor_key
+            return None
         extractor_data = item['id']
-        video = self.__select_video(extractor_id, extractor_data).first()
+        video = self.__select_video(extractor_key, extractor_data).first()
         if video is None:
             video = Video(
-                extractor_id=extractor_id,
+                extractor_key=extractor_key,
                 extractor_data=extractor_data,
             )
-        source.videos.append(video)
-        return True
+            self.session.add(video)
+        return video
 
     @staticmethod
     def __extract_key(ydl, item):
@@ -270,8 +291,9 @@ class Database:
             return item.get('extractor', None)
 
     @staticmethod
-    def __extract_info(ydl, url):
-        return ydl.extract_info(url, download=False, process=True)
+    def __extract_info(ydl, url, download=False):
+        info = ydl.extract_info(url, download=download)
+        return info['entries'] if 'entries' in info else [info]
 
 
 def gen_converters():
