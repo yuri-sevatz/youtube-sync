@@ -16,6 +16,9 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
 )
+from sqlalchemy.exc import (
+    IntegrityError,
+)
 
 from sqlalchemy.orm import (
     lazyload,
@@ -139,6 +142,7 @@ class Database:
                 id='version',
                 value=Database.__version__
             ))
+            self.session.commit()
 
     @staticmethod
     def query(url, ydl_opts):
@@ -153,14 +157,21 @@ class Database:
         converter = self.__create_converter(self.__create_extractor(url))
         return converter.output(converter.input(url))
 
-    def insert(self, url, delta):
-        self.session.add(self.__create_source(url, delta))
+    def add(self, url, delta):
+        try:
+            self.session.add(self.__create_source(url, delta))
+            self.session.commit()
+            return True
+        except IntegrityError:
+            self.session.rollback()
+            return False
 
-    def delete(self, url):
+    def remove(self, url):
         source = self.__select_source(url).first()
         if not source:
             return False
         self.session.delete(source)
+        self.session.commit()
         return True
 
     def sources(self):
@@ -257,12 +268,15 @@ class Database:
                 self.log('Warning: Parsing error - ' + url)
         source.prev = datetime.now()
         source.next = source.prev + source.delta
+        self.session.commit()
 
     def __download_source(self, ydl, source):
         for video in source.videos:
-            url = self.__convert_url(video.extractor_key, video.extractor_data)
-            self.__extract_info(ydl, url, download=True)
-            video.prev = datetime.now()
+            if video.prev is None:
+                url = self.__convert_url(video.extractor_key, video.extractor_data)
+                self.__extract_info(ydl, url, download=True)
+                video.prev = datetime.now()
+                self.session.commit()
 
     def __create_video(self, ydl, item):
         ''' YoutubeDL basically returns a pile of context-sensitive garbage identifying things that it *might* be '''
@@ -278,6 +292,7 @@ class Database:
                 extractor_data=extractor_data,
             )
             self.session.add(video)
+            self.session.commit()
         return video
 
     @staticmethod

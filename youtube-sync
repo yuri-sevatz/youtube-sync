@@ -8,7 +8,6 @@ import sys
 import ytsync
 
 from datetime import timedelta
-from sqlalchemy.exc import IntegrityError
 
 class MyLogger(object):
     @staticmethod
@@ -28,15 +27,8 @@ class MyLogger(object):
 
 log = MyLogger()
 
-def debug(d):
-    log.debug(d)
-
 def error(msg):
     log.error('>>> ERROR: ' + msg)
-
-def dump(msg):
-    sys.stdout.write(json.dumps(msg, ensure_ascii=False).encode('utf8'))
-    sys.stdout.write('\n')
 
 parser = argparse.ArgumentParser(
     description='SyncDB Shell Tool',
@@ -54,7 +46,7 @@ parser.add_argument(
     'action',
     action='store',
     help='Action',
-    choices=['create', 'insert', 'delete', 'sources', 'videos', 'sync', 'get', 'input', 'output', 'query'],
+    choices=['create', 'add', 'remove', 'sources', 'videos', 'sync', 'get', 'input', 'output', 'query'],
 )
 
 parser.add_argument(
@@ -97,12 +89,12 @@ if len(sys.argv) < 2:
 args = parser.parse_args()
 
 '''
-if not args.path and args.action in ['insert', 'update', 'delete', 'sources', 'videos', 'sync', 'get']:
-    error('Error: Missing argument - path (-p)')
+if not args.path and args.action in ['add', 'update', 'remove', 'sources', 'videos', 'sync', 'get']:
+    error('Missing argument - path (-p)')
     sys.exit(1)
 '''
-if not args.url and args.action in ['insert', 'delete', 'input', 'output', 'query', 'get']:
-    error('Error: Missing argument - [url]')
+if not args.url and args.action in ['add', 'remove', 'input', 'output', 'query', 'get']:
+    error('Missing argument - [url]')
     sys.exit(1)
 
 if args.action == 'sync' and not (args.fetch or args.download):
@@ -119,38 +111,28 @@ ydl_opts = {
     'extract_flat': 'in_playlist',
 }
 
-if args.action == 'insert':
-    db.insert(args.url, timedelta(days=1))
-elif args.action == 'delete':
-    if not db.delete(args.url):
-        error('Error: No records found')
+if args.action == 'add':
+    if not db.add(args.url, timedelta(days=1)):
+        error('Record already exists')
+        exit(1)
+elif args.action == 'remove':
+    if not db.remove(args.url):
+        error('No records found')
         exit(1)
 elif args.action == 'sources':
     for source in db.sources():
-        debug(source)
-    exit(0)
+        print(source)
 elif args.action == 'videos':
     for video in db.videos():
-        debug(video)
-    exit(0)
+        print(video)
 elif args.action == 'input':
-    debug(db.input(args.url))
-    exit(0)
+    print(db.input(args.url))
 elif args.action == 'output':
-    debug(db.output(args.url))
-    exit(0)
+    print(db.output(args.url))
 elif args.action == 'query':
     for item in db.query(args.url, ydl_opts):
-        dump(item)
+        print(json.dumps(item, ensure_ascii=False).encode('utf8'))
 elif args.action == 'sync':
     db.sync(ydl_opts, url=args.url, fetch=args.fetch, download=args.download)
 elif args.action == 'get':
     db.get(ydl_opts, args.url)
-
-try:
-    db.session.commit()
-    debug('Command Successful')
-except IntegrityError:
-    error('Error: IntegrityError... duplicate entity?')
-    db.session.rollback()
-    exit(1)
