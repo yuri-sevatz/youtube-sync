@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
-find_program(PYTHON "python")
+find_program(PYTHON "python2.7")
 
 if (PYTHON)
     set(SETUP_PY_IN
