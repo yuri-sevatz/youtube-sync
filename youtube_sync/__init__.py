@@ -33,6 +33,11 @@ from youtube_dl import (
     YoutubeDL,
     gen_extractors,
 )
+from youtube_dl.extractor import (
+    DailymotionUserIE,
+    DailymotionPlaylistIE,
+    DailymotionIE,
+)
 
 from youtube_dl.extractor.youtube import (
     YoutubeIE,
@@ -340,5 +345,15 @@ def gen_converters():
             regex=YoutubeUserIE._VALID_URL,
             parse=lambda mobj: mobj.group(1),
             template=lambda user_id: YoutubeUserIE._TEMPLATE_URL % user_id,
+        ),
+        'dailymotion': Converter(
+            regex=DailymotionIE._VALID_URL,
+            parse=lambda mobj: mobj.group('id'),
+            template=lambda video_id: 'https://www.dailymotion.com/video/%s' % video_id
+        ),
+        'dailymotion:user': Converter(
+            regex=DailymotionUserIE._VALID_URL,
+            parse=lambda mobj: mobj.group('user'),
+            template=lambda user: 'https://www.dailymotion.com/user/%s' % user
         ),
     }

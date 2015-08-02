@@ -5,7 +5,7 @@ import argparse
 import json
 import os
 import sys
-import ytsync
+import youtube_sync
 
 from datetime import timedelta
 
@@ -102,7 +102,7 @@ if args.action == 'sync' and not (args.fetch or args.download):
     sys.exit(1)
 
 """ Prepare the database """
-db = ytsync.Database('sqlite:///' + os.path.expanduser(args.path), log, echo=False)
+db = youtube_sync.Database('sqlite:///' + os.path.expanduser(args.path), log, echo=False)
 
 """ Client controls sync parameters """
 ydl_opts = {
