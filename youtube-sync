@@ -110,6 +110,7 @@ ydl_opts = {
     'outtmpl': args.output,
     'logger': log,
     'extract_flat': 'in_playlist',
+    'usenetrc': True,
 }
 
 if args.action == 'add':
