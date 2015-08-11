@@ -4,8 +4,7 @@ import re
 
 from datetime import (
     datetime,
-    timedelta,
-)
+    timedelta)
 
 from sqlalchemy import (
     Column,
@@ -16,52 +15,38 @@ from sqlalchemy import (
     String,
     Table,
     UniqueConstraint,
-    create_engine,
-)
+    create_engine)
+
 from sqlalchemy.exc import (
-    IntegrityError,
-)
+    IntegrityError)
 
 from sqlalchemy.orm import (
     lazyload,
     relationship,
-    sessionmaker,
-)
+    sessionmaker)
+
 from sqlalchemy.ext.declarative import (
-    declarative_base,
-)
+    declarative_base)
+
+from sqlalchemy.ext.hybrid import (
+    hybrid_method)
 
 from youtube_dl import (
     YoutubeDL,
-    gen_extractors,
-)
+    gen_extractors)
+
 from youtube_dl.extractor import (
     DailymotionUserIE,
-    DailymotionPlaylistIE,
-    DailymotionIE,
-)
+    DailymotionIE)
 
 from youtube_dl.extractor.youtube import (
     YoutubeIE,
     YoutubeChannelIE,
-    YoutubeFavouritesIE,
-    YoutubeHistoryIE,
     YoutubePlaylistIE,
-    YoutubeRecommendedIE,
-    YoutubeSearchDateIE,
-    YoutubeSearchIE,
-    YoutubeSearchURLIE,
-    YoutubeShowIE,
-    YoutubeSubscriptionsIE,
-    YoutubeTruncatedIDIE,
-    YoutubeTruncatedURLIE,
-    YoutubeUserIE,
-    YoutubeWatchLaterIE,
-)
+    YoutubeUserIE)
 
 from youtube_dl.utils import (
-    ExtractorError,
-)
+    ExtractorError)
 
 class ConverterError(ExtractorError):
     def __init__(self, msg):
@@ -104,6 +89,12 @@ class Entity(Base):
         UniqueConstraint('extractor_key', 'extractor_data', 'type', name='_entity_extractor_type'),
     )
 
+Sources_to_Videos = Table(
+    'content', Base.metadata,
+    Column('source_id', Integer, ForeignKey('source.id', onupdate="CASCADE", ondelete="CASCADE")),
+    Column('video_id', Integer, ForeignKey('video.id', onupdate="CASCADE", ondelete="CASCADE")),
+)
+
 
 class Video(Entity):
     __tablename__ = 'video'
@@ -116,12 +107,20 @@ class Source(Entity):
     id = Column(Integer, ForeignKey(Entity.__tablename__+'.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
     next = Column(DateTime, nullable=False, default=datetime.min)
     delta = Column(Interval, nullable=False)
-    videos = relationship('Video', secondary=Table(
-        'content', Base.metadata,
-        Column('source_id', Integer, ForeignKey(__tablename__+'.id', onupdate="CASCADE", ondelete="CASCADE")),
-        Column('video_id', Integer, ForeignKey(Video.__tablename__+'.id', onupdate="CASCADE", ondelete="CASCADE")),
-    ))
+    videos = relationship('Video', secondary=Sources_to_Videos)
     __mapper_args__ = {'polymorphic_identity': __tablename__}
+
+    @hybrid_method
+    def videos_missing(self):
+        return len([video for video in self.videos if video.prev is None])
+
+    @hybrid_method
+    def videos_saved(self):
+        return len([video for video in self.videos if video.prev is not None])
+
+    @hybrid_method
+    def videos_total(self):
+        return len(self.videos)
 
 
 class Config(Base):
@@ -129,6 +128,16 @@ class Config(Base):
     id = Column(String, primary_key=True)
     value = Column(String)
 
+
+class Colors:
+    NONE = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    HEADER = '\033[95m'
 
 class Database:
     __version__ = 1
@@ -181,21 +190,44 @@ class Database:
         self.session.commit()
         return True
 
+    def status(self):
+        items = []
+        for source in self.__query_sources():
+            saved = source.videos_saved()
+            total = source.videos_total()
+            items.append('[ ' + ((
+                Colors.YELLOW + Colors.BOLD + '{:^3}'.format(
+                    str(saved)
+                ) + Colors.NONE + ' of ' +
+                Colors.YELLOW + Colors.BOLD + '{:^3}'.format(
+                    str(total)
+                )
+            ) if saved < total else (
+                Colors.GREEN + Colors.BOLD + '{:^3}'.format(
+                    str(saved)
+                ) + Colors.NONE + ' of ' +
+                Colors.GREEN + Colors.BOLD + '{:^3}'.format(
+                    str(total)
+                )
+            )) + Colors.NONE + ' ]' + ' ' + self.converters.get(source.extractor_key).output(source.extractor_data))
+
+        return items
+
     def sources(self):
         items = []
-        for source in self.__select_sources().all():
+        for source in self.__query_sources().all():
             items.append(self.converters.get(source.extractor_key).output(source.extractor_data))
         return items
 
     def videos(self):
         items = []
-        for video in self.__select_videos().all():
+        for video in self.__query_videos().all():
             items.append(self.converters.get(video.extractor_key).output(video.extractor_data))
         return items
 
     def sync(self, ydl_opts, url=None, fetch=True, download=True):
         if url is None:
-            query = self.__select_sources()
+            query = self.__query_sources()
         else:
             query = self.__select_source(url)
         sources = query.all()
@@ -249,10 +281,10 @@ class Database:
     def __select_config(self, key):
         return self.session.query(Config).filter(Config.id == key)
 
-    def __select_sources(self):
+    def __query_sources(self):
         return self.session.query(Source).options(lazyload('videos'))
 
-    def __select_videos(self):
+    def __query_videos(self):
         return self.session.query(Video)
 
     def __select_source(self, url):
@@ -262,7 +294,7 @@ class Database:
             filter(Entity.extractor_data == self.__create_converter(extractor).input(url))
 
     def __select_video(self, extractor_key, extractor_data):
-        return self.__select_videos().\
+        return self.__query_videos().\
             filter(Entity.extractor_key == extractor_key).\
             filter(Entity.extractor_data == extractor_data)
 

@@ -47,7 +47,7 @@ parser.add_argument(
     'action',
     action='store',
     help='Action',
-    choices=['create', 'add', 'remove', 'sources', 'videos', 'sync', 'get', 'input', 'output', 'query'],
+    choices=['create', 'add', 'remove', 'sources', 'videos', 'status', 'sync', 'get', 'input', 'output', 'query'],
 )
 
 parser.add_argument(
@@ -90,7 +90,7 @@ if len(sys.argv) < 2:
 args = parser.parse_args()
 
 '''
-if not args.path and args.action in ['add', 'update', 'remove', 'sources', 'videos', 'sync', 'get']:
+if not args.path and args.action in ['add', 'update', 'remove', 'sources', 'videos', 'status', 'sync', 'get']:
     error('Missing argument - path (-p)')
     sys.exit(1)
 '''
@@ -127,6 +127,9 @@ elif args.action == 'sources':
 elif args.action == 'videos':
     for video in db.videos():
         print(video)
+elif args.action == 'status':
+    for status in db.status():
+        print(status)
 elif args.action == 'input':
     print(db.input(args.url))
 elif args.action == 'output':
