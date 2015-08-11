@@ -195,22 +195,20 @@ class Database:
         for source in self.__query_sources():
             saved = source.videos_saved()
             total = source.videos_total()
-            items.append('[ ' + ((
-                Colors.YELLOW + Colors.BOLD + '{:^3}'.format(
-                    str(saved)
-                ) + Colors.NONE + ' of ' +
-                Colors.YELLOW + Colors.BOLD + '{:^3}'.format(
-                    str(total)
-                )
-            ) if saved < total else (
-                Colors.GREEN + Colors.BOLD + '{:^3}'.format(
-                    str(saved)
-                ) + Colors.NONE + ' of ' +
-                Colors.GREEN + Colors.BOLD + '{:^3}'.format(
-                    str(total)
-                )
-            )) + Colors.NONE + ' ]' + ' ' + self.converters.get(source.extractor_key).output(source.extractor_data))
+            known = source.prev is not None
+            color = Colors.HEADER if not known \
+                else Colors.YELLOW if saved < total \
+                else Colors.GREEN if total > 0 \
+                else Colors.RED
 
+            items.append('[ ' + (
+                color + Colors.BOLD + '{:^3}'.format(
+                    str(saved)
+                ) + Colors.NONE + ' of ' +
+                color + Colors.BOLD + '{:^3}'.format(
+                    str(total) if known else '?'
+                )
+            ) + Colors.NONE + ' ]' + ' ' + self.converters.get(source.extractor_key).output(source.extractor_data))
         return items
 
     def sources(self):
