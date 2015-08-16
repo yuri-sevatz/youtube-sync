@@ -32,6 +32,7 @@ from sqlalchemy.ext.hybrid import (
     hybrid_method)
 
 from youtube_dl import (
+    DownloadError,
     YoutubeDL,
     gen_extractors)
 
@@ -47,6 +48,7 @@ from youtube_dl.extractor.youtube import (
 
 from youtube_dl.utils import (
     ExtractorError)
+
 
 class ConverterError(ExtractorError):
     def __init__(self, msg):
@@ -297,23 +299,31 @@ class Database:
             filter(Entity.extractor_data == extractor_data)
 
     def __refresh_source(self, ydl, source, url):
-        for item in self.__extract_info(ydl, url, download=False):
-            video = self.__create_video(ydl, item)
-            if video:
-                source.videos.append(video)
-            else:
-                self.log('Warning: Parsing error - ' + url)
-        source.prev = datetime.now()
-        source.next = source.prev + source.delta
-        self.session.commit()
+        self.log.debug('[sync] ' + url + ': Refreshing videos')
+        try:
+            for item in self.__extract_info(ydl, url, download=False):
+                video = self.__create_video(ydl, item)
+                if video:
+                    source.videos.append(video)
+                else:
+                    self.log.warning('[sync] ' + url + ': Video missing extractor data')
+            source.prev = datetime.now()
+            source.next = source.prev + source.delta
+            self.session.commit()
+        except DownloadError:
+            self.log.warning('[sync] ' + url + ': Could not refresh videos')
 
     def __download_source(self, ydl, source):
         for video in source.videos:
             if video.prev is None:
                 url = self.__convert_url(video.extractor_key, video.extractor_data)
-                self.__extract_info(ydl, url, download=True)
-                video.prev = datetime.now()
-                self.session.commit()
+                self.log.debug('[sync] ' + url + ': Downloading video')
+                try:
+                    self.__extract_info(ydl, url, download=True)
+                    video.prev = datetime.now()
+                    self.session.commit()
+                except DownloadError:
+                    self.log.warning('[sync] ' + url + ': Could not download video')
 
     def __create_video(self, ydl, item):
         ''' YoutubeDL basically returns a pile of context-sensitive garbage identifying things that it *might* be '''

@@ -28,6 +28,7 @@ class MyLogger(object):
 
 log = MyLogger()
 
+
 def error(msg):
     log.error('>>> ERROR: ' + msg)
 
