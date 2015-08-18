@@ -37,8 +37,10 @@ parser = argparse.ArgumentParser(
     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
 )
 
+
 parser.add_argument(
-    'path',
+    '-p',
+    '--path',
     action='store',
     help='Database Path',
     default=None
@@ -90,6 +92,23 @@ if len(sys.argv) < 2:
 
 args = parser.parse_args()
 
+
+def find_parent_with_file(path, filename):
+    while not os.path.isfile(os.path.join(path, filename)):
+        candidate = os.path.dirname(path)
+        if candidate == path:
+            return None
+        path = candidate
+    return path
+
+file = '.ytsync.db'
+path = os.path.expanduser(args.path) if args.path is not None else find_parent_with_file(os.getcwd(), file)
+if path is None:
+    error('Must specify a sync path (-p), or cwd must reside in a sync path')
+    sys.exit(1)
+else:
+    os.chdir(path)
+
 '''
 if not args.path and args.action in ['add', 'update', 'remove', 'sources', 'videos', 'status', 'sync', 'get']:
     error('Missing argument - path (-p)')
@@ -104,7 +123,8 @@ if args.action == 'sync' and not (args.fetch or args.download):
     sys.exit(1)
 
 """ Prepare the database """
-db = youtube_sync.Database('sqlite:///' + os.path.expanduser(args.path), log, echo=False)
+print(os.path.join(path, file))
+db = youtube_sync.Database('sqlite:///' + file, log, echo=False)
 
 """ Client controls sync parameters """
 ydl_opts = {

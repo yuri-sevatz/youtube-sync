@@ -54,6 +54,7 @@ class ConverterError(ExtractorError):
     def __init__(self, msg):
         super(ConverterError, self).__init__(msg)
 
+
 class Converter:
     def __init__(self, regex, parse, template):
         self.regex = regex
@@ -140,6 +141,7 @@ class Colors:
     YELLOW = '\033[93m'
     BLUE = '\033[94m'
     HEADER = '\033[95m'
+
 
 class Database:
     __version__ = 1
