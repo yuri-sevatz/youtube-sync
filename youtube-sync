@@ -10,6 +10,7 @@ import youtube_sync
 
 from datetime import timedelta
 
+
 class MyLogger(object):
     @staticmethod
     def debug(msg):
@@ -50,7 +51,20 @@ parser.add_argument(
     'action',
     action='store',
     help='Action',
-    choices=['create', 'add', 'remove', 'sources', 'videos', 'status', 'sync', 'get', 'input', 'output', 'query'],
+    choices=[
+        'create',
+        'add',
+        'remove',
+        'sources',
+        'videos',
+        'status',
+        'sync',
+        'get',
+        'queue',
+        'input',
+        'output',
+        'query'
+    ],
 )
 
 parser.add_argument(
@@ -110,11 +124,11 @@ else:
     os.chdir(path)
 
 '''
-if not args.path and args.action in ['add', 'update', 'remove', 'sources', 'videos', 'status', 'sync', 'get']:
+if not args.path and args.action in ['add', 'update', 'remove', 'sources', 'videos', 'status', 'sync', 'get', 'queue']:
     error('Missing argument - path (-p)')
     sys.exit(1)
 '''
-if not args.url and args.action in ['add', 'remove', 'input', 'output', 'query', 'get']:
+if not args.url and args.action in ['add', 'remove', 'input', 'output', 'query', 'get', 'queue']:
     error('Missing argument - [url]')
     sys.exit(1)
 
@@ -123,7 +137,6 @@ if args.action == 'sync' and not (args.fetch or args.download):
     sys.exit(1)
 
 """ Prepare the database """
-print(os.path.join(path, file))
 db = youtube_sync.Database('sqlite:///' + file, log, echo=False)
 
 """ Client controls sync parameters """
@@ -162,3 +175,5 @@ elif args.action == 'sync':
     db.sync(ydl_opts, url=args.url, fetch=args.fetch, download=args.download)
 elif args.action == 'get':
     db.get(ydl_opts, args.url)
+elif args.action == 'queue':
+    db.queue(args.url)

@@ -238,20 +238,32 @@ class Database:
             return False
 
         ydl = Database.__create_ydl(ydl_opts)
-        for source in sources:
-            if fetch and source.next <= datetime.today():
-                converter = self.converters.get(source.extractor_key)
-                self.__refresh_source(ydl, source, converter.output(source.extractor_data))
-            if download:
-                self.__download_source(ydl, source)
+        if fetch:
+            for source in sources:
+                if source.next <= datetime.today():
+                    converter = self.converters.get(source.extractor_key)
+                    self.__refresh_source(ydl, source, converter.output(source.extractor_data))
+        if download:
+            if url is None:
+                videos = self.__query_videos().filter(Video.prev.is_(None)).all()
+            else:
+                videos = []
+                for source in sources:
+                    for video in source.videos:
+                        if video.prev is None:
+                            videos.append(video)
+            for video in videos:
+                self.__download_video(ydl, video)
         return True
 
     def get(self, ydl_opts, url):
-        source = self.__create_source(url, timedelta(days=1))
         ydl = Database.__create_ydl(ydl_opts)
-        converter = self.converters.get(source.extractor_key)
-        self.__refresh_source(ydl, source, converter.output(source.extractor_data))
+        source = self.__refresh_url(ydl, url)
         self.__download_source(ydl, source)
+
+    def queue(self, ydl_opts, url):
+        ydl = Database.__create_ydl(ydl_opts)
+        self.__refresh_url(ydl, url)
 
     @staticmethod
     def __create_ydl(ydl_opts):
@@ -300,6 +312,12 @@ class Database:
             filter(Entity.extractor_key == extractor_key).\
             filter(Entity.extractor_data == extractor_data)
 
+    def __refresh_url(self, ydl, url):
+        source = self.__create_source(url, timedelta(days=1))
+        converter = self.converters.get(source.extractor_key)
+        self.__refresh_source(ydl, source, converter.output(source.extractor_data))
+        return source
+
     def __refresh_source(self, ydl, source, url):
         self.log.debug('[sync] ' + url + ': Refreshing videos')
         try:
@@ -318,14 +336,17 @@ class Database:
     def __download_source(self, ydl, source):
         for video in source.videos:
             if video.prev is None:
-                url = self.__convert_url(video.extractor_key, video.extractor_data)
-                self.log.debug('[sync] ' + url + ': Downloading video')
-                try:
-                    self.__extract_info(ydl, url, download=True)
-                    video.prev = datetime.now()
-                    self.session.commit()
-                except DownloadError:
-                    self.log.warning('[sync] ' + url + ': Could not download video')
+                self.__download_video(ydl, video)
+
+    def __download_video(self, ydl, video):
+        url = self.__convert_url(video.extractor_key, video.extractor_data)
+        self.log.debug('[sync] ' + url + ': Downloading video')
+        try:
+            self.__extract_info(ydl, url, download=True)
+            video.prev = datetime.now()
+            self.session.commit()
+        except DownloadError:
+            self.log.warning('[sync] ' + url + ': Could not download video')
 
     def __create_video(self, ydl, item):
         ''' YoutubeDL basically returns a pile of context-sensitive garbage identifying things that it *might* be '''
