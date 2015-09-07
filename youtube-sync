@@ -61,9 +61,12 @@ parser.add_argument(
         'sync',
         'get',
         'queue',
+        'enable',
+        'disable',
+        'purge',
         'input',
         'output',
-        'query'
+        'query',
     ],
 )
 
@@ -123,12 +126,18 @@ if path is None:
 else:
     os.chdir(path)
 
-'''
-if not args.path and args.action in ['add', 'update', 'remove', 'sources', 'videos', 'status', 'sync', 'get', 'queue']:
-    error('Missing argument - path (-p)')
-    sys.exit(1)
-'''
-if not args.url and args.action in ['add', 'remove', 'input', 'output', 'query', 'get', 'queue']:
+if not args.url and args.action in [
+    'add',
+    'remove',
+    'input',
+    'output',
+    'query',
+    'get',
+    'queue',
+    'enable',
+    'disable',
+    'purge',
+]:
     error('Missing argument - [url]')
     sys.exit(1)
 
@@ -177,3 +186,9 @@ elif args.action == 'get':
     db.get(ydl_opts, args.url)
 elif args.action == 'queue':
     db.queue(args.url)
+elif args.action == 'enable':
+    db.enable(args.url)
+elif args.action == 'disable':
+    db.disable(args.url)
+elif args.action == 'purge':
+    db.purge(args.url)

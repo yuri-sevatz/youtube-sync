@@ -7,6 +7,7 @@ from datetime import (
     timedelta)
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Integer,
@@ -83,6 +84,7 @@ class Entity(Base):
     prev = Column(DateTime, nullable=True)
     extractor_key = Column(String, nullable=False)
     extractor_data = Column(String, nullable=False)
+    allow = Column(Boolean, nullable=False, default=True)
     __mapper_args__ = {
         'polymorphic_on': type,
         'polymorphic_identity': __tablename__,
@@ -245,12 +247,12 @@ class Database:
                     self.__refresh_source(ydl, source, converter.output(source.extractor_data))
         if download:
             if url is None:
-                videos = self.__query_videos().filter(Video.prev.is_(None)).all()
+                videos = self.__query_videos().filter(Video.prev.is_(None)).filter(Video.allow.is_(True)).all()
             else:
                 videos = []
                 for source in sources:
                     for video in source.videos:
-                        if video.prev is None:
+                        if video.prev is None and video.allow is True:
                             videos.append(video)
             for video in videos:
                 self.__download_video(ydl, video)
@@ -264,6 +266,20 @@ class Database:
     def queue(self, ydl_opts, url):
         ydl = Database.__create_ydl(ydl_opts)
         self.__refresh_url(ydl, url)
+
+    def enable(self, url):
+        self.__toggle_url(url, True)
+
+    def disable(self, url):
+        self.__toggle_url(url, False)
+
+    def purge(self, url):
+        entity = self.__select_entity(url).first()
+        if not entity:
+            return False
+        self.session.delete(entity)
+        self.session.commit()
+        return True
 
     @staticmethod
     def __create_ydl(ydl_opts):
@@ -301,6 +317,12 @@ class Database:
     def __query_videos(self):
         return self.session.query(Video)
 
+    def __select_entity(self, url):
+        extractor = self.__create_extractor(url)
+        return self.session.query(Entity).\
+            filter(Entity.extractor_key == extractor.IE_NAME).\
+            filter(Entity.extractor_data == self.__create_converter(extractor).input(url))
+
     def __select_source(self, url):
         extractor = self.__create_extractor(url)
         return self.session.query(Source).\
@@ -311,6 +333,16 @@ class Database:
         return self.__query_videos().\
             filter(Entity.extractor_key == extractor_key).\
             filter(Entity.extractor_data == extractor_data)
+
+    def __toggle_url(self, url, allow):
+        entities = self.__select_entity(url).all()
+        '''At most there will be an entity of each type here (This is okay because hides the N-M mapping)'''
+        if not len(entities):
+            return False
+        for entity in entities:
+            entity.allow = allow
+            self.session.commit()
+        return True
 
     def __refresh_url(self, ydl, url):
         source = self.__create_source(url, timedelta(days=1))
@@ -335,7 +367,7 @@ class Database:
 
     def __download_source(self, ydl, source):
         for video in source.videos:
-            if video.prev is None:
+            if video.prev is None and video.allow is True:
                 self.__download_video(ydl, video)
 
     def __download_video(self, ydl, video):
