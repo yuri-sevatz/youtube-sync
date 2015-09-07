@@ -268,10 +268,10 @@ class Database:
         self.__refresh_url(ydl, url)
 
     def enable(self, url):
-        self.__toggle_url(url, True)
+        return self.__toggle_url(url, True)
 
     def disable(self, url):
-        self.__toggle_url(url, False)
+        return self.__toggle_url(url, False)
 
     def purge(self, url):
         entity = self.__select_entity(url).first()

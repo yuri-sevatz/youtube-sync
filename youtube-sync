@@ -187,8 +187,14 @@ elif args.action == 'get':
 elif args.action == 'queue':
     db.queue(args.url)
 elif args.action == 'enable':
-    db.enable(args.url)
+    if not db.enable(args.url):
+        error('No records found')
+        exit(1)
 elif args.action == 'disable':
-    db.disable(args.url)
+    if not db.disable(args.url):
+        error('No records found')
+        exit(1)
 elif args.action == 'purge':
-    db.purge(args.url)
+    if not db.purge(args.url):
+        error('No records found')
+        exit(1)
