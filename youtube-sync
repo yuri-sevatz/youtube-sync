@@ -185,7 +185,7 @@ elif args.action == 'sync':
 elif args.action == 'get':
     db.get(ydl_opts, args.url)
 elif args.action == 'queue':
-    db.queue(args.url)
+    db.queue(ydl_opts, args.url)
 elif args.action == 'enable':
     if not db.enable(args.url):
         error('No records found')
