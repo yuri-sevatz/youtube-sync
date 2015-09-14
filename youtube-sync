@@ -88,11 +88,11 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    '-f',
-    '--fetch',
+    '-u',
+    '--update',
     action='store_true',
     required=False,
-    help='Fetch sources',
+    help='Update sources',
 )
 
 parser.add_argument(
@@ -101,6 +101,14 @@ parser.add_argument(
     action='store_true',
     required=False,
     help='Download videos',
+)
+
+parser.add_argument(
+    '-f',
+    '--force',
+    action='store_true',
+    required=False,
+    help='Force Update',
 )
 
 if len(sys.argv) < 2:
@@ -141,8 +149,8 @@ if not args.url and args.action in [
     error('Missing argument - [url]')
     sys.exit(1)
 
-if args.action == 'sync' and not (args.fetch or args.download):
-    error('Must specify at least one of [fetch|download] with sync (-f, -d)')
+if args.action == 'sync' and not (args.update or args.download):
+    error('Must specify at least one of [update|download] with sync (-u, -d)')
     sys.exit(1)
 
 """ Prepare the database """
@@ -181,7 +189,7 @@ elif args.action == 'query':
     for item in db.query(args.url, ydl_opts):
         print(json.dumps(item, ensure_ascii=False).encode('utf8'))
 elif args.action == 'sync':
-    db.sync(ydl_opts, url=args.url, fetch=args.fetch, download=args.download)
+    db.sync(ydl_opts, url=args.url, update=args.update, download=args.download, force=args.force)
 elif args.action == 'get':
     db.get(ydl_opts, args.url)
 elif args.action == 'queue':

@@ -229,7 +229,7 @@ class Database:
             items.append(self.converters.get(video.extractor_key).output(video.extractor_data))
         return items
 
-    def sync(self, ydl_opts, url=None, fetch=True, download=True):
+    def sync(self, ydl_opts, url=None, update=True, download=True, force=False):
         if url is None:
             query = self.__query_sources()
         else:
@@ -240,9 +240,9 @@ class Database:
             return False
 
         ydl = Database.__create_ydl(ydl_opts)
-        if fetch:
+        if force or update:
             for source in sources:
-                if source.next <= datetime.today():
+                if force or source.next <= datetime.today():
                     converter = self.converters.get(source.extractor_key)
                     self.__refresh_source(ydl, source, converter.output(source.extractor_data))
         if download:
