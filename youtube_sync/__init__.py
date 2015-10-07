@@ -202,7 +202,9 @@ class Database:
             saved = source.videos_saved()
             total = source.videos_total()
             known = source.prev is not None
-            color = Colors.HEADER if not known \
+            allow = source.allow
+            color = Colors.HEADER if not allow \
+                else Colors.BLUE if not known \
                 else Colors.YELLOW if saved < total \
                 else Colors.GREEN if total > 0 \
                 else Colors.RED
@@ -242,7 +244,7 @@ class Database:
         ydl = Database.__create_ydl(ydl_opts)
         if force or update:
             for source in sources:
-                if force or source.next <= datetime.today():
+                if source.allow and (force or source.next <= datetime.today()):
                     converter = self.converters.get(source.extractor_key)
                     self.__refresh_source(ydl, source, converter.output(source.extractor_data))
         if download:
