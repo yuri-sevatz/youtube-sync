@@ -39,7 +39,9 @@ from youtube_dl import (
 
 from youtube_dl.extractor import (
     DailymotionUserIE,
-    DailymotionIE)
+    DailymotionIE,
+    VimeoIE,
+    VimeoChannelIE, VimeoUserIE)
 
 from youtube_dl.extractor.youtube import (
     YoutubeIE,
@@ -454,5 +456,20 @@ def gen_converters():
             regex=DailymotionUserIE._VALID_URL,
             parse=lambda mobj: mobj.group('user'),
             template=lambda user: 'https://www.dailymotion.com/user/%s' % user
+        ),
+        'vimeo': Converter(
+            regex=VimeoIE._VALID_URL,
+            parse=lambda mobj: mobj.group('id'),
+            template=lambda video_id: 'https://vimeo.com/%s' % video_id
+        ),
+        'vimeo:channel': Converter(
+            regex=VimeoChannelIE._VALID_URL,
+            parse=lambda mobj: mobj.group('id'),
+            template=lambda channel_id: 'https://vimeo.com/channels/%s' % channel_id
+        ),
+        'vimeo:user': Converter(
+            regex=VimeoUserIE._VALID_URL,
+            parse=lambda mobj: mobj.group('name'),
+            template=lambda name: 'https://vimeo.com/%s/videos' % name
         ),
     }
