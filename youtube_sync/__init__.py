@@ -443,9 +443,11 @@ def gen_converters():
             template=lambda channel_id: YoutubeChannelIE._TEMPLATE_URL % channel_id,
         ),
         'youtube:user': Converter(
+            # TODO: This needs a separate info extractor, it's not 1:1 anymore,
+            # (@see https://github.com/rg3/youtube-dl/issues/10126)
             regex=YoutubeUserIE._VALID_URL,
-            parse=lambda mobj: mobj.group(1),
-            template=lambda user_id: YoutubeUserIE._TEMPLATE_URL % user_id,
+            parse=lambda mobj: mobj.group(2) if mobj.group(1) == 'user' else None,
+            template=lambda user_id: YoutubeUserIE._TEMPLATE_URL % ('user', user_id),
         ),
         'dailymotion': Converter(
             regex=DailymotionIE._VALID_URL,
