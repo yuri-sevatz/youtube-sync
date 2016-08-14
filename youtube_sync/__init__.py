@@ -198,9 +198,9 @@ class Database:
         self.session.commit()
         return True
 
-    def status(self):
+    def status(self, url):
         items = []
-        for source in self.__query_sources():
+        for source in (self.__query_source(url) if url else self.__query_sources()):
             saved = source.videos_saved()
             total = source.videos_total()
             known = source.prev is not None
@@ -314,6 +314,13 @@ class Database:
 
     def __select_config(self, key):
         return self.session.query(Config).filter(Config.id == key)
+
+    def __query_source(self, url):
+        extractor = self.__create_extractor(url)
+        return self.session.query(Source).\
+            filter(Entity.extractor_key == extractor.IE_NAME).\
+            filter(Entity.extractor_data == self.__create_converter(extractor).input(url)).\
+            options(lazyload('videos'))
 
     def __query_sources(self):
         return self.session.query(Source).options(lazyload('videos'))
