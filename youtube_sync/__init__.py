@@ -355,19 +355,19 @@ class Database:
         return source
 
     def __refresh_source(self, ydl, source, url):
-        self.log.debug('[sync] ' + url + ': Refreshing videos')
+        self.log.debug('[sync] ' + url + ' : Refreshing videos')
         try:
             for item in self.__extract_info(ydl, url, download=False):
                 video = self.__create_video(ydl, item)
                 if video:
                     source.videos.append(video)
                 else:
-                    self.log.warning('[sync] ' + url + ': Video missing extractor data')
+                    self.log.warning('[sync] ' + url + ' : Video missing extractor data')
             source.prev = datetime.now()
             source.next = source.prev + source.delta
             self.session.commit()
         except DownloadError:
-            self.log.warning('[sync] ' + url + ': Could not refresh videos')
+            self.log.warning('[sync] ' + url + ' : Could not refresh videos')
 
     def __download_source(self, ydl, source):
         for video in source.videos:
@@ -376,13 +376,13 @@ class Database:
 
     def __download_video(self, ydl, video):
         url = self.__convert_url(video.extractor_key, video.extractor_data)
-        self.log.debug('[sync] ' + url + ': Downloading video')
+        self.log.debug('[sync] ' + url + ' : Downloading video')
         try:
             self.__extract_info(ydl, url, download=True)
             video.prev = datetime.now()
             self.session.commit()
         except DownloadError:
-            self.log.warning('[sync] ' + url + ': Could not download video')
+            self.log.warning('[sync] ' + url + ' : Could not download video')
 
     def __create_video(self, ydl, item):
         ''' YoutubeDL basically returns a pile of context-sensitive garbage identifying things that it *might* be '''
