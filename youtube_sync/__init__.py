@@ -106,6 +106,7 @@ Sources_to_Videos = Table(
 class Video(Entity):
     __tablename__ = 'video'
     id = Column(Integer, ForeignKey(Entity.__tablename__+'.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
+    sources = relationship('Source', secondary=Sources_to_Videos)
     __mapper_args__ = {'polymorphic_identity': __tablename__}
 
 
@@ -325,13 +326,14 @@ class Database:
         extractor = self.__create_extractor(url)
         return self.session.query(Video).\
             filter(Entity.extractor_key == extractor.IE_NAME).\
-            filter(Entity.extractor_data == self.__create_converter(extractor).input(url))
+            filter(Entity.extractor_data == self.__create_converter(extractor).input(url)).\
+            options(lazyload('sources'))
 
     def __query_sources(self):
         return self.session.query(Source).options(lazyload('videos'))
 
     def __query_videos(self):
-        return self.session.query(Video)
+        return self.session.query(Video).options(lazyload('sources'))
 
     def __select_entity(self, url):
         extractor = self.__create_extractor(url)
