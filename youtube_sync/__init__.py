@@ -199,7 +199,7 @@ class Database:
         self.session.commit()
         return True
 
-    def status(self, url):
+    def source(self, url):
         items = []
         for source in (self.__query_source(url) if url else self.__query_sources()):
             saved = source.videos_saved()
@@ -219,21 +219,45 @@ class Database:
                 color + Colors.BOLD + '{:^3}'.format(
                     str(total) if known else '?'
                 )
-            ) + Colors.NONE + ' ]' + ' ' + self.converters.get(source.extractor_key).output(source.extractor_data))
+            ) + Colors.NONE + ' ]' + ' ' + self.__entity_url(source))
+            if url is not None:
+                for video in source.videos:
+                    items.append(self.__entity_url(video))
+        return items
+
+    def video(self, url):
+        items = []
+        for video in (self.__query_video(url) if url else self.__query_videos()):
+            allow = video.allow
+            saved = 1 if video.prev else 0
+            color = Colors.HEADER if not allow \
+                else Colors.YELLOW if saved \
+                else Colors.GREEN
+            items.append('[ ' + (
+                color + Colors.BOLD + '{:^3}'.format(
+                    str(saved)
+                ) + Colors.NONE + ' of ' +
+                color + Colors.BOLD + '{:^3}'.format(
+                    str(1)
+                )
+            ) + Colors.NONE + ' ]' + ' ' + self.__entity_url(video))
+            if url is not None:
+                for source in video.sources:
+                    items.append(self.__entity_url(source))
         return items
 
     def sources(self, url=None):
         items = []
         query = self.__query_source(url) if url else self.__query_sources()
         for source in query.all():
-            items.append(self.converters.get(source.extractor_key).output(source.extractor_data))
+            items.append(self.__entity_url(source))
         return items
 
     def videos(self, url=None):
         items = []
         query = self.__query_video(url) if url else self.__query_videos()
         for video in query.all():
-            items.append(self.converters.get(video.extractor_key).output(video.extractor_data))
+            items.append(self.__entity_url(video))
         return items
 
     def sync(self, ydl_opts, url=None, update=True, download=True, force=False):
@@ -309,8 +333,8 @@ class Database:
             raise ConverterError('Invalid IE: %s' % extractor.IE_NAME)
         return converter
 
-    def __convert_url(self, extractor_key, extractor_data):
-        return self.converters.get(extractor_key).output(extractor_data)
+    def __entity_url(self, entity):
+        return self.converters.get(entity.extractor_key).output(entity.extractor_data)
 
     def __select_config(self, key):
         return self.session.query(Config).filter(Config.id == key)
@@ -389,7 +413,7 @@ class Database:
                 self.__download_video(ydl, video)
 
     def __download_video(self, ydl, video):
-        url = self.__convert_url(video.extractor_key, video.extractor_data)
+        url = self.__entity_url(video)
         self.log.debug('[sync] ' + url + ' : Downloading video')
         try:
             self.__extract_info(ydl, url, download=True)

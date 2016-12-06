@@ -179,7 +179,11 @@ elif args.action == 'videos':
     for video in db.videos(args.url if args.url else None):
         print(video)
 elif args.action == 'status':
-    for status in db.status(args.url if args.url else None):
+    print("\n" + ('Sources' if not args.url else ('Sources for ' + args.url)) + ':' + "\n")
+    for status in db.source(args.url if args.url else None):
+        print(status)
+    print("\n" + ('Videos' if not args.url else ('Videos for ' + args.url)) + ':' + "\n")
+    for status in db.video(args.url if args.url else None):
         print(status)
 elif args.action == 'input':
     print(db.input(args.url))
