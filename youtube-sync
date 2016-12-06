@@ -173,10 +173,10 @@ elif args.action == 'remove':
         error('No records found')
         exit(1)
 elif args.action == 'sources':
-    for source in db.sources():
+    for source in db.sources(args.url if args.url else None):
         print(source)
 elif args.action == 'videos':
-    for video in db.videos():
+    for video in db.videos(args.url if args.url else None):
         print(video)
 elif args.action == 'status':
     for status in db.status(args.url if args.url else None):

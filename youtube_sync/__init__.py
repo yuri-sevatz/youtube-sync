@@ -221,23 +221,22 @@ class Database:
             ) + Colors.NONE + ' ]' + ' ' + self.converters.get(source.extractor_key).output(source.extractor_data))
         return items
 
-    def sources(self):
+    def sources(self, url=None):
         items = []
-        for source in self.__query_sources().all():
+        query = self.__query_source(url) if url else self.__query_sources()
+        for source in query.all():
             items.append(self.converters.get(source.extractor_key).output(source.extractor_data))
         return items
 
-    def videos(self):
+    def videos(self, url=None):
         items = []
-        for video in self.__query_videos().all():
+        query = self.__query_video(url) if url else self.__query_videos()
+        for video in query.all():
             items.append(self.converters.get(video.extractor_key).output(video.extractor_data))
         return items
 
     def sync(self, ydl_opts, url=None, update=True, download=True, force=False):
-        if url is None:
-            query = self.__query_sources()
-        else:
-            query = self.__select_source(url)
+        query = self.__query_source(url) if url else self.__query_sources()
         sources = query.all()
 
         if url and not len(sources):
@@ -321,6 +320,12 @@ class Database:
             filter(Entity.extractor_key == extractor.IE_NAME).\
             filter(Entity.extractor_data == self.__create_converter(extractor).input(url)).\
             options(lazyload('videos'))
+
+    def __query_video(self, url):
+        extractor = self.__create_extractor(url)
+        return self.session.query(Video).\
+            filter(Entity.extractor_key == extractor.IE_NAME).\
+            filter(Entity.extractor_data == self.__create_converter(extractor).input(url))
 
     def __query_sources(self):
         return self.session.query(Source).options(lazyload('videos'))
