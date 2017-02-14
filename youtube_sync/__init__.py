@@ -106,7 +106,7 @@ Sources_to_Videos = Table(
 class Video(Entity):
     __tablename__ = 'video'
     id = Column(Integer, ForeignKey(Entity.__tablename__+'.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
-    sources = relationship('Source', secondary=Sources_to_Videos)
+    sources = relationship('Source', secondary=Sources_to_Videos, back_populates='videos')
     __mapper_args__ = {'polymorphic_identity': __tablename__}
 
 
@@ -115,7 +115,7 @@ class Source(Entity):
     id = Column(Integer, ForeignKey(Entity.__tablename__+'.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
     next = Column(DateTime, nullable=False, default=datetime.min)
     delta = Column(Interval, nullable=False)
-    videos = relationship('Video', secondary=Sources_to_Videos)
+    videos = relationship('Video', secondary=Sources_to_Videos, back_populates='sources')
     __mapper_args__ = {'polymorphic_identity': __tablename__}
 
     @hybrid_method
@@ -302,10 +302,13 @@ class Database:
         return self.__toggle_url(url, False)
 
     def purge(self, url):
-        entity = self.__select_entity(url).first()
-        if not entity:
+        source = self.__select_source(url).first()
+        if not source:
             return False
-        self.session.delete(entity)
+        for video in source.videos:
+            if self.__select_video_sources(video.id).count() == 1:
+                self.session.delete(video)
+        self.session.delete(source)
         self.session.commit()
         return True
 
@@ -341,10 +344,9 @@ class Database:
 
     def __query_source(self, url):
         extractor = self.__create_extractor(url)
-        return self.session.query(Source).\
+        return self.__query_sources().\
             filter(Entity.extractor_key == extractor.IE_NAME).\
-            filter(Entity.extractor_data == self.__create_converter(extractor).input(url)).\
-            options(lazyload('videos'))
+            filter(Entity.extractor_data == self.__create_converter(extractor).input(url))
 
     def __query_video(self, url):
         extractor = self.__create_extractor(url)
@@ -354,7 +356,8 @@ class Database:
             options(lazyload('sources'))
 
     def __query_sources(self):
-        return self.session.query(Source).options(lazyload('videos'))
+        return self.session.query(Source).\
+            options(lazyload('videos'))
 
     def __query_videos(self):
         return self.session.query(Video).options(lazyload('sources'))
@@ -375,6 +378,10 @@ class Database:
         return self.__query_videos().\
             filter(Entity.extractor_key == extractor_key).\
             filter(Entity.extractor_data == extractor_data)
+
+    def __select_video_sources(self, id):
+        return self.__query_sources().\
+            filter(Source.videos.any(Video.id == id))
 
     def __toggle_url(self, url, allow):
         entities = self.__select_entity(url).all()
