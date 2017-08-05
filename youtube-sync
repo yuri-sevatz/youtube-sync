@@ -11,6 +11,17 @@ import youtube_sync
 from datetime import timedelta
 
 
+class Colors:
+    NONE = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    HEADER = '\033[95m'
+
+
 class MyLogger(object):
     @staticmethod
     def debug(msg):
@@ -57,6 +68,8 @@ parser.add_argument(
         'remove',
         'sources',
         'videos',
+        'parents',
+        'children',
         'status',
         'sync',
         'get',
@@ -137,6 +150,8 @@ else:
 if not args.url and args.action in [
     'add',
     'remove',
+    'parents',
+    'children',
     'input',
     'output',
     'query',
@@ -174,17 +189,59 @@ elif args.action == 'remove':
         exit(1)
 elif args.action == 'sources':
     for source in db.sources(args.url if args.url else None):
-        print(source)
+        print(source.url())
 elif args.action == 'videos':
     for video in db.videos(args.url if args.url else None):
-        print(video)
+        print(video.url())
+elif args.action == 'parents':
+    for video in db.videos(args.url):
+        for source in video.sources:
+            print(source.url())
+elif args.action == 'children':
+    for source in db.sources(args.url):
+        for video in source.videos:
+            print(video.url())
 elif args.action == 'status':
-    print("\n" + ('Sources' if not args.url else ('Sources for ' + args.url)) + ':' + "\n")
-    for status in db.source(args.url if args.url else None):
-        print(status)
-    print("\n" + ('Videos' if not args.url else ('Videos for ' + args.url)) + ':' + "\n")
-    for status in db.video(args.url if args.url else None):
-        print(status)
+    sys.stderr.write("\n" + ('Sources' if not args.url else ('Sources for ' + args.url)) + ':' + "\n")
+    for source in db.sources(args.url if args.url else None):
+        saved = source.videos_saved()
+        total = source.videos_total()
+        known = source.prev is not None
+        allow = source.allow
+        color = Colors.HEADER if not allow \
+            else Colors.BLUE if not known \
+            else Colors.YELLOW if saved < total \
+            else Colors.GREEN if total > 0 \
+            else Colors.RED
+        sys.stderr.write('[ ' + (
+            color + Colors.BOLD + '{:^3}'.format(
+                str(saved)
+            ) + Colors.NONE + ' of ' +
+            color + Colors.BOLD + '{:^3}'.format(
+                str(total) if known else '?'
+            )
+        ) + Colors.NONE + ' ]' + ' ' + source.url() + "\n")
+        if args.url is not None:
+            for video in source.videos:
+                print(video.url())
+    sys.stderr.write("\n" + ('Videos' if not args.url else ('Videos for ' + args.url)) + ':' + "\n")
+    for video in db.videos(args.url if args.url else None):
+        allow = video.allow
+        saved = 1 if video.prev else 0
+        color = Colors.HEADER if not allow \
+            else Colors.YELLOW if saved \
+            else Colors.GREEN
+        sys.stderr.write('[ ' + (
+            color + Colors.BOLD + '{:^3}'.format(
+                str(saved)
+            ) + Colors.NONE + ' of ' +
+            color + Colors.BOLD + '{:^3}'.format(
+                str(1)
+            )
+        ) + Colors.NONE + ' ]' + ' ' + video.url() + "\n")
+        if args.url is not None:
+            for source in video.sources:
+                print(source.url())
 elif args.action == 'input':
     print(db.input(args.url))
 elif args.action == 'output':
