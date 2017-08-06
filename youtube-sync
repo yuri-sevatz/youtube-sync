@@ -3,12 +3,16 @@
 from __future__ import unicode_literals
 
 import argparse
-import json
 import os
 import sys
-import youtube_sync
 
-from datetime import timedelta
+from datetime import (
+    timedelta,
+)
+
+from youtube_sync.db import (
+    Database,
+)
 
 
 class Colors:
@@ -22,33 +26,15 @@ class Colors:
     HEADER = '\033[95m'
 
 
-class MyLogger(object):
-    @staticmethod
-    def debug(msg):
-        sys.stderr.write(msg)
-        sys.stderr.write('\n')
-
-    @staticmethod
-    def warning(msg):
-        sys.stderr.write(msg)
-        sys.stderr.write('\n')
-
-    @staticmethod
-    def error(msg):
-        sys.stderr.write(msg)
-        sys.stderr.write('\n')
-
-log = MyLogger()
-
-
 def error(msg):
-    log.error('>>> ERROR: ' + msg)
+    sys.stderr.write('>>> ERROR: ')
+    sys.stderr.write(msg)
+    sys.stderr.write('\n')
 
 parser = argparse.ArgumentParser(
     description='SyncDB Shell Tool',
     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
 )
-
 
 parser.add_argument(
     '-p',
@@ -63,7 +49,7 @@ parser.add_argument(
     action='store',
     help='Action',
     choices=[
-        'create',
+        'init',
         'add',
         'remove',
         'sources',
@@ -71,15 +57,10 @@ parser.add_argument(
         'parents',
         'children',
         'status',
+        'fetch',
         'sync',
-        'get',
-        'queue',
         'enable',
         'disable',
-        'purge',
-        'input',
-        'output',
-        'query',
     ],
 )
 
@@ -97,23 +78,7 @@ parser.add_argument(
     action='store',
     nargs='?',
     help='Output template',
-    default='%(extractor)s/%(uploader)s/%(title)s-%(id)s.%(ext)s'
-)
-
-parser.add_argument(
-    '-u',
-    '--update',
-    action='store_true',
-    required=False,
-    help='Update sources',
-)
-
-parser.add_argument(
-    '-d',
-    '--download',
-    action='store_true',
-    required=False,
-    help='Download videos',
+    default=''
 )
 
 parser.add_argument(
@@ -141,10 +106,14 @@ def find_parent_with_file(path, filename):
 
 file = '.ytsync.db'
 path = os.path.expanduser(args.path) if args.path is not None else find_parent_with_file(os.getcwd(), file)
-if path is None:
+
+if path is None and args.action != 'init':
     error('Must specify a sync path (-p), or cwd must reside in a sync path')
     sys.exit(1)
-else:
+elif path and args.action == 'init':
+    error('Database already in path')
+    sys.exit(1)
+elif path:
     os.chdir(path)
 
 if not args.url and args.action in [
@@ -152,32 +121,14 @@ if not args.url and args.action in [
     'remove',
     'parents',
     'children',
-    'input',
-    'output',
-    'query',
-    'get',
-    'queue',
     'enable',
     'disable',
-    'purge',
 ]:
     error('Missing argument - [url]')
     sys.exit(1)
 
-if args.action == 'sync' and not (args.update or args.download):
-    error('Must specify at least one of [update|download] with sync (-u, -d)')
-    sys.exit(1)
-
 """ Prepare the database """
-db = youtube_sync.Database('sqlite:///' + file, log, echo=False)
-
-""" Client controls sync parameters """
-ydl_opts = {
-    'outtmpl': args.output,
-    'logger': log,
-    'extract_flat': 'in_playlist',
-    'usenetrc': True,
-}
+db = Database('sqlite:///' + file)
 
 if args.action == 'add':
     if not db.add(args.url, timedelta(days=1)):
@@ -189,18 +140,18 @@ elif args.action == 'remove':
         exit(1)
 elif args.action == 'sources':
     for source in db.sources(args.url if args.url else None):
-        print(source.url())
+        print(source.url)
 elif args.action == 'videos':
     for video in db.videos(args.url if args.url else None):
-        print(video.url())
+        print(video.extractor_key + ' ' + video.extractor_data)
 elif args.action == 'parents':
     for video in db.videos(args.url):
         for source in video.sources:
-            print(source.url())
+            print(source.url)
 elif args.action == 'children':
     for source in db.sources(args.url):
         for video in source.videos:
-            print(video.url())
+            print(video.extractor_key + ' ' + video.extractor_data)
 elif args.action == 'status':
     sys.stderr.write("\n" + ('Sources' if not args.url else ('Sources for ' + args.url)) + ':' + "\n")
     for source in db.sources(args.url if args.url else None):
@@ -220,10 +171,10 @@ elif args.action == 'status':
             color + Colors.BOLD + '{:^3}'.format(
                 str(total) if known else '?'
             )
-        ) + Colors.NONE + ' ]' + ' ' + source.url() + "\n")
+        ) + Colors.NONE + ' ]' + ' ' + source.url + "\n")
         if args.url is not None:
             for video in source.videos:
-                print(video.url())
+                print(video.extractor_key + ' ' + video.extractor_data)
     sys.stderr.write("\n" + ('Videos' if not args.url else ('Videos for ' + args.url)) + ':' + "\n")
     for video in db.videos(args.url if args.url else None):
         allow = video.allow
@@ -238,32 +189,19 @@ elif args.action == 'status':
             color + Colors.BOLD + '{:^3}'.format(
                 str(1)
             )
-        ) + Colors.NONE + ' ]' + ' ' + video.url() + "\n")
+        ) + Colors.NONE + ' ]' + ' ' + video.extractor_key + ' ' + video.extractor_data + "\n")
         if args.url is not None:
             for source in video.sources:
-                print(source.url())
-elif args.action == 'input':
-    print(db.input(args.url))
-elif args.action == 'output':
-    print(db.output(args.url))
-elif args.action == 'query':
-    for item in db.query(args.url, ydl_opts):
-        print(json.dumps(item, ensure_ascii=False).encode('utf8'))
+                print(source.url)
+elif args.action == 'fetch':
+    db.fetch(url=args.url, force=args.force)
 elif args.action == 'sync':
-    db.sync(ydl_opts, url=args.url, update=args.update, download=args.download, force=args.force)
-elif args.action == 'get':
-    db.get(ydl_opts, args.url)
-elif args.action == 'queue':
-    db.queue(ydl_opts, args.url)
+    db.sync(url=args.url, force=args.force)
 elif args.action == 'enable':
-    if not db.enable(args.url):
+    if not db.enable(url=args.url):
         error('No records found')
         exit(1)
 elif args.action == 'disable':
-    if not db.disable(args.url):
-        error('No records found')
-        exit(1)
-elif args.action == 'purge':
-    if not db.purge(args.url):
+    if not db.disable(url=args.url):
         error('No records found')
         exit(1)
