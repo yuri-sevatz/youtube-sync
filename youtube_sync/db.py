@@ -102,7 +102,7 @@ class Database:
         try:
             if self.__query_source(url).count():
                 return False
-            info = self.ydl.extract_info(url, process=False, download=False)
+            info = self.ydl.extract_info(url, download=False)
             self.__create_source(info, delta)
             self.session.commit()
             return True
@@ -154,7 +154,7 @@ class Database:
             filter(Source.extractor_match == self.__url_extractor_match(url))
 
     def __query_video(self, url):
-        info = self.ydl.extract_info(url, process=False, download=False)
+        info = self.ydl.extract_info(url, download=False)
         return self.__query_videos().\
             filter(Entity.extractor_key == Database.__info_extractor_key(info)).\
             filter(Entity.extractor_data == Database.__info_extractor_data(info))
