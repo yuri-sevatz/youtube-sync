@@ -168,15 +168,19 @@ class YoutubeSync:
                     source.videos.append(self.__info_video(entry_info))
                 self.session.commit()
                 if download:
+                    result = True
                     for entry_info in entries:
-                        self.__download_video(entry_info)
-                    source.prev = datetime.now()
-                    source.next = source.prev + source.delta
-                    self.session.commit()
-                return True
+                        try:
+                            self.__download_video(entry_info)
+                        except youtube_dl.DownloadError:
+                            result = False
+                            self.session.rollback()
+                    if result:
+                        source.prev = datetime.now()
+                        source.next = source.prev + source.delta
+                        self.session.commit()
             except youtube_dl.DownloadError:
                 self.session.rollback()
-                return False
 
     def __download_video(self, info):
         video = self.__info_video(info)
