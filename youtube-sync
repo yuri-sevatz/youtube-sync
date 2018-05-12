@@ -6,13 +6,8 @@ import argparse
 import os
 import sys
 
-from datetime import (
-    timedelta,
-)
-
-from youtube_sync.db import (
-    Database,
-)
+from datetime import timedelta
+from youtube_sync.ytsync import YoutubeSync
 
 
 class Colors:
@@ -30,6 +25,7 @@ def error(msg):
     sys.stderr.write('>>> ERROR: ')
     sys.stderr.write(msg)
     sys.stderr.write('\n')
+
 
 parser = argparse.ArgumentParser(
     description='SyncDB Shell Tool',
@@ -104,6 +100,7 @@ def find_parent_with_file(path, filename):
         path = candidate
     return path
 
+
 file = '.ytsync.db'
 path = os.path.expanduser(args.path) if args.path is not None else find_parent_with_file(os.getcwd(), file)
 
@@ -128,33 +125,39 @@ if not args.url and args.action in [
     sys.exit(1)
 
 """ Prepare the database """
-db = Database('sqlite:///' + file)
+ytsync = YoutubeSync('sqlite:///' + file, params={
+    'outtmpl': u'%(extractor)s/%(uploader)s/%(title)s-%(id)s.%(ext)s',
+    'extract_flat': 'in_playlist',
+    'sleep_interval': 10,
+    'logtostderr': True,
+    'usenetrc': True,
+})
 
 if args.action == 'add':
-    if not db.add(args.url, timedelta(days=1)):
+    if not ytsync.add(args.url, timedelta(days=1)):
         error('Record already exists')
         exit(1)
 elif args.action == 'remove':
-    if not db.remove(args.url):
+    if not ytsync.remove(args.url):
         error('No records found')
         exit(1)
 elif args.action == 'sources':
-    for source in db.sources(args.url if args.url else None):
+    for source in ytsync.sources(args.url if args.url else None):
         print(source.url)
 elif args.action == 'videos':
-    for video in db.videos(args.url if args.url else None):
+    for video in ytsync.videos(args.url if args.url else None):
         print(video.extractor_key + ' ' + video.extractor_data)
 elif args.action == 'parents':
-    for video in db.videos(args.url):
+    for video in ytsync.videos(args.url):
         for source in video.sources:
             print(source.url)
 elif args.action == 'children':
-    for source in db.sources(args.url):
+    for source in ytsync.sources(args.url):
         for video in source.videos:
             print(video.extractor_key + ' ' + video.extractor_data)
 elif args.action == 'status':
     sys.stderr.write("\n" + ('Sources' if not args.url else ('Sources for ' + args.url)) + ':' + "\n")
-    for source in db.sources(args.url if args.url else None):
+    for source in ytsync.sources(args.url if args.url else None):
         saved = source.videos_saved()
         total = source.videos_total()
         known = source.prev is not None
@@ -176,7 +179,7 @@ elif args.action == 'status':
             for video in source.videos:
                 print(video.extractor_key + ' ' + video.extractor_data)
     sys.stderr.write("\n" + ('Videos' if not args.url else ('Videos for ' + args.url)) + ':' + "\n")
-    for video in db.videos(args.url if args.url else None):
+    for video in ytsync.videos(args.url if args.url else None):
         allow = video.allow
         saved = 1 if video.prev else 0
         color = Colors.HEADER if not allow \
@@ -194,14 +197,14 @@ elif args.action == 'status':
             for source in video.sources:
                 print(source.url)
 elif args.action == 'fetch':
-    db.fetch(url=args.url, force=args.force)
+    ytsync.fetch(url=args.url, force=args.force)
 elif args.action == 'sync':
-    db.sync(url=args.url, force=args.force)
+    ytsync.sync(url=args.url, force=args.force)
 elif args.action == 'enable':
-    if not db.enable(url=args.url):
+    if not ytsync.enable(url=args.url):
         error('No records found')
         exit(1)
 elif args.action == 'disable':
-    if not db.disable(url=args.url):
+    if not ytsync.disable(url=args.url):
         error('No records found')
         exit(1)

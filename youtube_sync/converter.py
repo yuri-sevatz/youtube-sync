@@ -1,3 +1,5 @@
+#!/usr/bin/env python2.7
+
 import re
 
 from youtube_dl.extractor import (
