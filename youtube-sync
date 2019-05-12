@@ -131,6 +131,7 @@ ytsync = YoutubeSync('sqlite:///' + file, params={
     'sleep_interval': 10,
     'logtostderr': True,
     'usenetrc': True,
+    'quiet': True,
 })
 
 if args.action == 'add':
