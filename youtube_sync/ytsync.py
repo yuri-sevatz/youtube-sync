@@ -162,6 +162,7 @@ class YoutubeSync:
     def __update_source(self, source, download, force):
         if source.allow and (force or source.next <= datetime.today()):
             try:
+                self.ytdl.to_stdout('[ytsync] Updating %s' % source.url)
                 info = self.ytdl.extract_info(source.url, download=False)
                 entries = info['entries'] if 'entries' in info else [info]
                 for entry_info in entries:
@@ -185,6 +186,7 @@ class YoutubeSync:
     def __download_video(self, info):
         video = self.__info_video(info)
         if video.allow and video.prev is None:
+            self.ytdl.to_stdout('[ytsync] Downloading %s %s' % (video.extractor_key, video.extractor_data))
             self.ytdl.process_ie_result(info)
             video.prev = datetime.now()
             self.session.commit()
