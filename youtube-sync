@@ -65,7 +65,7 @@ parser.add_argument(
     action='store',
     nargs='?',
     help='Unique Url',
-    default=None
+    default=None,
 )
 
 parser.add_argument(
@@ -74,7 +74,23 @@ parser.add_argument(
     action='store',
     nargs='?',
     help='Output template',
-    default=''
+    default='',
+)
+
+parser.add_argument(
+    '-n',
+    '--netrc',
+    action='store_true',
+    required=False,
+    help='Use .netrc authentication data',
+)
+
+parser.add_argument(
+    '--cookies',
+    action='store',
+    nargs='?',
+    help='File to read cookies from and dump cookie jar in',
+    default=None,
 )
 
 parser.add_argument(
@@ -125,14 +141,22 @@ if not args.url and args.action in [
     sys.exit(1)
 
 """ Prepare the database """
-ytsync = YoutubeSync('sqlite:///' + file, params={
+params={
     'outtmpl': u'%(extractor)s/%(uploader)s/%(title)s-%(id)s.%(ext)s',
     'extract_flat': 'in_playlist',
     'sleep_interval': 10,
     'logtostderr': True,
-    'usenetrc': True,
+
     'quiet': True,
-})
+}
+
+if args.cookies:
+    params['cookiefile'] = args.cookies
+
+if args.netrc:
+    params['usenetrc'] = True
+
+ytsync = YoutubeSync('sqlite:///' + file, params=params)
 
 if args.action == 'add':
     if not ytsync.add(args.url, timedelta(days=1)):
