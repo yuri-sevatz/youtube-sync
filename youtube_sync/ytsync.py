@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import lazyload, sessionmaker
-from youtube_sync import converter, db, ytdl
+from youtube_sync import db, ytdl
 
 
 class YoutubeSync:
@@ -30,31 +30,7 @@ class YoutubeSync:
         if not version:
             self.__set_config('version', YoutubeSync.__version__)
         elif version.value == "1":
-            engine.execute(
-                'ALTER TABLE %s ADD COLUMN %s %s' % (
-                    db.Source.__tablename__,
-                    db.Source.url.name,
-                    db.Source.url.type.compile(dialect=engine.dialect)
-                )
-            )
-            engine.execute(
-                'ALTER TABLE %s ADD COLUMN %s %s' % (
-                    db.Source.__tablename__,
-                    db.Source.extractor_match.name,
-                    db.Source.extractor_match.type.compile(dialect=engine.dialect)
-                )
-            )
-            for source in self.__query_sources():
-                source.url = converter.__converters__.get(source.extractor_key).output(source.extractor_data)
-                extractor = self.ytdl.get_info_extractor_from_url(source.url)
-                source.extractor_key = extractor.ie_key()
-            for video in self.__query_videos():
-                video.extractor_key = self.ytdl.get_info_extractor_from_name(video.extractor_key).ie_key()
-            self.session.merge(db.Config(
-                id='version',
-                value=2
-            ))
-            self.session.commit()
+            raise Exception("Migration from V1 no longer supported")
         ydl_version = self.__get_config('ydl_version')
         if ydl_version is None or ydl_version.value != youtube_dl.version.__version__:
             for source in self.__query_sources():
