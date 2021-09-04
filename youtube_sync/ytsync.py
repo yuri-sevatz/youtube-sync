@@ -140,6 +140,16 @@ class YoutubeSync:
             try:
                 self.ytdl.to_stdout('[ytsync] Updating %s' % source.url)
                 info = self.ytdl.extract_info(source.url, download=False)
+                merge = self.__select_source(info).first()
+                if merge and merge != source:
+                    for video in source.videos:
+                        merge.videos.append(video)
+                    self.session.delete(source)
+                    source = merge
+                else:
+                    source.extractor_key = self.ytdl.get_key_from_info(info)
+                    source.extractor_data = self.ytdl.get_data_from_info(info)
+                source.extractor_match = self.ytdl.get_matcher_from_info(info)
                 entries = info['entries'] if 'entries' in info else [info]
                 for entry_info in entries:
                     source.videos.append(self.__info_video(entry_info))
